@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        :root {
+            --bg-dark: #1e1e24;
+            --accent: #3b82f6;
+            --accent-hover: #2563eb;
+        }
+        body { 
+            background: var(--bg-dark); 
+            color: white; 
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; 
+            margin: 0; 
+            padding: 0;
+            overflow: hidden;
+            border-radius: 12px;
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+
+        /* Custom Title Bar */
+        .titlebar {
+            height: 32px; 
+            background: #121212; 
+            display: flex; 
+            align-items: center; 
+            justify-content: center;
+            -webkit-app-region: drag;
+        }
+        .titlebar-text { font-size: 12px; color: #888; }
+
+        /* Layout */
+        .container { 
+            display: grid; 
+            grid-template-columns: 200px 1fr; 
+            height: calc(100vh - 32px); 
+        }
+        .sidebar { background: rgba(0,0,0,0.2); padding: 20px; }
+        .main-view { padding: 40px; position: relative; }
+
+        /* Navigation */
+        .nav-item {
+            padding: 12px; margin-bottom: 5px; border-radius: 8px; cursor: pointer;
+            color: #aaa; font-size: 14px; transition: all 0.2s;
+        }
+        .nav-item:hover { background: rgba(255,255,255,0.05); color: white; }
+        .nav-item.active { background: var(--accent); color: white; }
+
+        /* UI Elements */
+        h1 { font-weight: 400; margin: 0 0 20px 0; }
+        .card {
+            background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.05);
+            padding: 25px; border-radius: 12px; margin-bottom: 20px;
+        }
+        .btn {
+            background: var(--accent); border: none; padding: 12px 30px; 
+            border-radius: 6px; color: white; cursor: pointer; font-size: 14px; margin-right: 10px;
+            transition: background 0.2s;
+        }
+        .btn:hover { background: var(--accent-hover); }
+        .btn-outline { background: transparent; border: 1px solid #444; }
+        .btn-danger { background: #dc2626; }
+        
+        /* Progress */
+        .progress-container { position: relative; width: 150px; height: 150px; margin: 0 auto; }
+        .progress-ring { transform: rotate(-90deg); }
+        .progress-ring circle { 
+            stroke-width: 8; fill: transparent; 
+        }
+        .bg-circle { stroke: #333; }
+        .progress-circle { 
+            stroke: var(--accent); 
+            stroke-dasharray: 440; /* 2 * PI * 70 */
+            stroke-dashoffset: 440; /* Initially 0% */
+            transition: stroke-dashoffset 0.3s;
+        }
+        .progress-text {
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            font-size: 24px; font-weight: 300;
+        }
+        .status-msg { text-align: center; margin-top: 20px; color: #888; height: 20px; }
+
+        /* Hidden sections logic */
+        .view-section { display: none; }
+        .view-section.active { display: block; animation: fadeIn 0.3s; }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+        /* Drag & Drop Zone */
+        .drop-zone {
+            border: 2px dashed #444; border-radius: 12px; padding: 40px; text-align: center;
+            color: #666; cursor: pointer; margin-top: 10px;
+        }
+        .drop-zone:hover { border-color: var(--accent); color: #aaa; }
+        
+        /* Info Note */
+        .info-note {
+            font-size: 11px; color: #666; line-height: 1.4;
+            position: absolute; bottom: 60px; width: 160px;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <!-- Title Bar -->
+    <div class="titlebar">
+        <div class="titlebar-text">Time Machine for Windows</div>
+    </div>
+
+    <div class="container">
+        <!-- Sidebar -->
+        <div class="sidebar">
+            <div class="nav-item active" onclick="switchTab('backup')">Backup</div>
+            <div class="nav-item" onclick="switchTab('restore')">Restore</div>
+            <div class="nav-item" onclick="switchTab('rescue')">Rescue USB</div>
+            <div class="info-note">Closing minimizes to tray. Hourly backups continue in background.</div>
+            <div class="nav-item" style="position: absolute; bottom: 20px; width: 160px;" onclick="window.close()">Minimize to Tray</div>
+        </div>
+
+        <!-- Main Content -->
+        <div class="main-view">
+            
+            <!-- Backup View -->
+            <div id="backup-view" class="view-section active">
+                <h1>Create Backup</h1>
+                <div class="card">
+                    <p style="color:#888; margin-bottom:15px;">Source</p>
+                    <button class="btn btn-outline" onclick="selectFolder('backupSource')">Select Folder</button>
+                    <span id="backup-source-text" style="margin-left:15px; color:#aaa;">No source selected</span>
+                </div>
+                <div class="card">
+                    <p style="color:#888; margin-bottom:15px;">Destination</p>
+                    <button class="btn btn-outline" onclick="selectFolder('backupDest')">Select Drive</button>
+                    <span id="backup-dest-text" style="margin-left:15px; color:#aaa;">No destination selected</span>
+                </div>
+                
+                <div style="text-align:center; margin-top:40px;">
+                    <div class="progress-container">
+                        <svg class="progress-ring" width="150" height="150">
+                            <circle class="bg-circle" cx="75" cy="75" r="70"></circle>
+                            <circle id="progress-circle" class="progress-circle" cx="75" cy="75" r="70"></circle>
+                        </svg>
+                        <div id="progress-percent" class="progress-text">0%</div>
+                    </div>
+                    <div id="status-backup" class="status-msg">Ready</div>
+                    <div style="margin-top:20px;">
+                        <button class="btn" style="width:200px; margin-right:10px;" onclick="startBackup()">Start Backup</button>
+                        <button class="btn btn-outline" style="width:200px;" onclick="startHourlyBackup()">Hourly Backup</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Restore View -->
+            <div id="restore-view" class="view-section">
+                <h1>Restore Files</h1>
+                <div class="card">
+                    <p style="color:#888; margin-bottom:15px;">Backup Source</p>
+                    <div class="drop-zone" onclick="selectFolder('restoreSource')">
+                        Drop Backup Folder or Click to Select
+                    </div>
+                    <p id="restore-source-text" style="margin-top:10px; font-size:12px; color:#aaa;"></p>
+                </div>
+                <div class="card">
+                    <p style="color:#888; margin-bottom:15px;">Restore To</p>
+                    <button class="btn btn-outline" onclick="selectFolder('restoreDest')">Choose Location</button>
+                    <span id="restore-dest-text" style="margin-left:15px; color:#aaa;">Original Location</span>
+                </div>
+                <div style="text-align:center; margin-top:40px;">
+                    <div class="progress-container">
+                        <svg class="progress-ring" width="150" height="150">
+                            <circle class="bg-circle" cx="75" cy="75" r="70"></circle>
+                            <circle id="progress-circle" class="progress-circle" cx="75" cy="75" r="70"></circle>
+                        </svg>
+                        <div id="progress-percent" class="progress-text">0%</div>
+                    </div>
+                    <div id="status-restore" class="status-msg"></div>
+                    <button class="btn" style="margin-top:20px; width:200px;" onclick="startRestore()">Restore</button>
+                </div>
+            </div>
+
+            <!-- Rescue USB View -->
+            <div id="rescue-view" class="view-section">
+                <h1>Create Rescue USB</h1>
+                <p style="color:#aaa; max-width:500px;">Create a bootable rescue stick. If your system fails, plug this in to restore your data.</p>
+                
+                <div class="card">
+                    <p style="color:#888; margin-bottom:15px;">1. Select USB Drive</p>
+                    <button class="btn btn-outline" onclick="selectFolder('usbDrive')">Select USB Drive</button>
+                    <span id="usb-text" style="margin-left:15px; color:#aaa;">Not selected</span>
+                </div>
+
+                <div class="card">
+                    <p style="color:#888; margin-bottom:15px;">2. User Profile to Backup</p>
+                    <button class="btn btn-outline" onclick="selectFolder('userProfile')">Select User Folder</button>
+                    <span id="profile-text" style="margin-left:15px; color:#aaa;">Current User</span>
+                </div>
+
+                <div style="text-align:center; margin-top:40px;">
+                    <div class="progress-container">
+                        <svg class="progress-ring" width="150" height="150">
+                            <circle class="bg-circle" cx="75" cy="75" r="70"></circle>
+                            <circle id="progress-circle" class="progress-circle" cx="75" cy="75" r="70"></circle>
+                        </svg>
+                        <div id="progress-percent" class="progress-text">0%</div>
+                    </div>
+                    <div id="status-rescue" class="status-msg"></div>
+                    <div style="margin-top:20px;">
+                        <button class="btn btn-danger" style="width:200px; margin-right:10px;" onclick="createRescue()">Build Rescue USB</button>
+                        <button class="btn" style="width:250px;" onclick="createRescueWithHourly()">Build Rescue USB with Hourly Backup</button>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <script>
+        // --- State Management ---
+        // Initialize state with empty strings. 
+        // We will get the home path from the backend if needed, or just let user select.
+        let state = {
+            backupSource: '',
+            backupDest: '',
+            restoreSource: '',
+            restoreDest: '',
+            usbDrive: '',
+            userProfile: '',
+            context: '',
+            activeTab: 'backup' 
+        };
+
+        // --- UI Logic ---
+        function switchTab(tabId) {
+            // Update active tab state
+            state.activeTab = tabId;
+            
+            // Hide all sections
+            document.querySelectorAll('.view-section').forEach(el => el.classList.remove('active'));
+            // Remove active class from nav
+            document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+            
+            // Show selected section
+            document.getElementById(tabId + '-view').classList.add('active');
+            // Find the nav item that triggered it (via event target) and add active class
+            if (typeof event !== 'undefined' && event.target) {
+                event.target.classList.add('active');
+            } else {
+                // If no event, find the nav item by tabId and activate it
+                document.querySelector('.nav-item[onclick="switchTab(\'' + tabId + '\')"]').classList.add('active');
+            }
+        }
+
+        function updateProgress(percent) {
+            const circle = document.getElementById('progress-circle');
+            const text = document.getElementById('progress-percent');
+            // Use the same value as in the HTML for stroke-dasharray
+            const circumference = 440;
+            // Clamp percent between 0 and 100
+            const clampedPercent = Math.max(0, Math.min(100, percent));
+            const offset = circumference - (clampedPercent / 100) * circumference;
+            
+            circle.style.strokeDashoffset = offset;
+            text.innerText = clampedPercent + '%';
+        }
+
+        function updateStatus(message) {
+            // Only update the status for the active tab
+            const statusElementId = 'status-' + state.activeTab;
+            document.getElementById(statusElementId).innerText = message;
+        }
+
+        // --- IPC Communication ---
+
+        // 1. Listen for replies from Backend
+        window.electronAPI.onReply((data) => {
+            console.log("Received:", data);
+            if (data.type === 'progress') {
+                updateProgress(parseInt(data.data));
+            } else if (data.type === 'status') {
+                updateStatus(data.data);
+            } else if (data.type === 'complete') {
+                updateStatus(data.data);
+                setTimeout(() => updateProgress(0), 2000);
+            } else if (data.type === 'error') {
+                alert("Error: " + data.data);
+                updateStatus("Error occurred.");
+            }
+        });
+
+        // 2. Listen for folder selection results
+        window.electronAPI.onFolderSelected((path) => {
+            console.log("Folder Selected:", state.context, path);
+            
+            // Update the state based on which button was clicked
+            state[state.context] = path;
+
+            // Map state keys to UI Element IDs
+            const idMap = {
+                'backupSource': 'backup-source-text',
+                'backupDest': 'backup-dest-text',
+                'restoreSource': 'restore-source-text',
+                'restoreDest': 'restore-dest-text',
+                'usbDrive': 'usb-text',
+                'userProfile': 'profile-text'
+            };
+
+            const elementId = idMap[state.context];
+            if (elementId) {
+                document.getElementById(elementId).innerText = path;
+            }
+        });
+
+        // 3. Listen for auto-detected user folder
+        window.electronAPI.onAutoUserFolder((path) => {
+            console.log("Auto-detected user folder:", path);
+            // Auto-select the user profile for rescue USB
+            if (path && !state.userProfile) {
+                state.userProfile = path;
+                document.getElementById('profile-text').innerText = path;
+            }
+        });
+
+        // --- Actions ---
+
+        // Generic folder selector
+        function selectFolder(stateKey) {
+            state.context = stateKey; // Remember which one we are selecting
+            window.electronAPI.selectFolder();
+        }
+
+        function startBackup() {
+            if(!state.backupSource || !state.backupDest) {
+                return alert("Please select both Source and Destination.");
+            }
+            updateProgress(0);
+            updateStatus("Starting backup...");
+            window.electronAPI.runBackup(state.backupSource, state.backupDest);
+        }
+
+        function startHourlyBackup() {
+            if(!state.backupSource || !state.backupDest) {
+                return alert("Please select both Source and Destination.");
+            }
+            updateProgress(0);
+            updateStatus("Starting hourly backup...");
+            window.electronAPI.runHourlyBackup(state.backupSource, state.backupDest);
+        }
+
+        function startRestore() {
+            if(!state.restoreSource) {
+                return alert("Please select a Backup Source.");
+            }
+            
+            // If destination not set, assume original (handled by backend logic or fallback)
+            let dest = state.restoreDest; 
+            if (!dest) {
+                // In a real app, you might want to resolve this. 
+                // For now, we pass a flag or empty string and let backend handle logic.
+                dest = "ORIGINAL_LOCATION_FLAG"; 
+            }
+            
+            updateStatus("Starting restore...");
+            window.electronAPI.runRestore(state.restoreSource, dest);
+        }
+
+        function createRescue() {
+            if(!state.usbDrive) {
+                return alert("Please select a USB Drive.");
+            }
+            if(!state.userProfile) {
+                return alert("Please select the User Profile folder.");
+            }
+            updateStatus("Building Rescue USB...");
+            window.electronAPI.runRescue(state.usbDrive, state.userProfile);
+        }
+
+        function createRescueWithHourly() {
+            if(!state.usbDrive) {
+                return alert("Please select a USB Drive.");
+            }
+            if(!state.userProfile) {
+                return alert("Please select the User Profile folder.");
+            }
+            updateProgress(0);
+            updateStatus("Building Rescue USB with Hourly Backup...");
+            window.electronAPI.runRescueWithHourly(state.usbDrive, state.userProfile);
+        }
+    </script>
+</body>
+</html>
