@@ -1,0 +1,27 @@
+{
+  "name": "time-machine-clone",
+  "version": "1.0.0",
+  "description": "A Time Machine clone with Rescue capabilities",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder"
+  },
+  "devDependencies": {
+    "electron": "^41.0.3",
+    "electron-builder": "^26.8.1"
+  },
+  "build": {
+    "appId": "com.timemachine.clone",
+    "productName": "Time Machine",
+    "extraResources": [
+      {
+        "from": "../engine/bin/Release/net8.0/win-x64/publish/",
+        "to": "engine",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ]
+  }
+}

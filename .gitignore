@@ -1,0 +1,46 @@
+# Dependencies
+node_modules/
+package-lock.json
+
+# Electron
+dist/
+*.asar
+*.asar.unpacked
+
+# .NET
+bin/
+obj/
+*.dll
+*.pdb
+*.user
+*.suo
+*.cache
+
+# IDE
+.vs/
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+*.tmp
+*.temp
+.cache/
+
+# AppData (local user data)
+AppData/
+
+# Backup files
+*.bak
+*.backup
