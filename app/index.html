@@ -6,6 +6,9 @@
             --bg-dark: #1e1e24;
             --accent: #3b82f6;
             --accent-hover: #2563eb;
+            --success: #10b981;
+            --warning: #f59e0b;
+            --danger: #ef4444;
         }
         body { 
             background: var(--bg-dark); 
@@ -35,8 +38,8 @@
             grid-template-columns: 200px 1fr; 
             height: calc(100vh - 32px); 
         }
-        .sidebar { background: rgba(0,0,0,0.2); padding: 20px; }
-        .main-view { padding: 40px; position: relative; }
+        .sidebar { background: rgba(0,0,0,0.2); padding: 20px; position: relative; }
+        .main-view { padding: 40px; position: relative; overflow-y: auto; }
 
         /* Navigation */
         .nav-item {
@@ -59,7 +62,10 @@
         }
         .btn:hover { background: var(--accent-hover); }
         .btn-outline { background: transparent; border: 1px solid #444; }
+        .btn-outline:hover { border-color: var(--accent); background: rgba(59, 130, 246, 0.1); }
         .btn-danger { background: #dc2626; }
+        .btn-success { background: var(--success); }
+        .btn-small { padding: 8px 16px; font-size: 12px; }
         
         /* Progress */
         .progress-container { position: relative; width: 150px; height: 150px; margin: 0 auto; }
@@ -70,8 +76,8 @@
         .bg-circle { stroke: #333; }
         .progress-circle { 
             stroke: var(--accent); 
-            stroke-dasharray: 440; /* 2 * PI * 70 */
-            stroke-dashoffset: 440; /* Initially 0% */
+            stroke-dasharray: 440;
+            stroke-dashoffset: 440;
             transition: stroke-dashoffset 0.3s;
         }
         .progress-text {
@@ -98,6 +104,120 @@
             position: absolute; bottom: 60px; width: 160px;
             text-align: center;
         }
+
+        /* Storage Display */
+        .storage-card {
+            background: linear-gradient(135deg, rgba(59, 130, 246, 0.1) 0%, rgba(16, 185, 129, 0.1) 100%);
+            border: 1px solid rgba(59, 130, 246, 0.2);
+            border-radius: 16px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        .storage-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+        .storage-title {
+            font-size: 14px;
+            color: #888;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        .storage-value {
+            font-size: 32px;
+            font-weight: 600;
+            background: linear-gradient(135deg, var(--accent) 0%, var(--success) 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        .storage-bar-container {
+            background: rgba(255,255,255,0.05);
+            border-radius: 8px;
+            height: 12px;
+            overflow: hidden;
+            margin: 10px 0;
+        }
+        .storage-bar {
+            height: 100%;
+            background: linear-gradient(90deg, var(--accent) 0%, var(--success) 100%);
+            border-radius: 8px;
+            transition: width 0.5s ease;
+        }
+        .storage-details {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 15px;
+            margin-top: 15px;
+        }
+        .storage-detail-item {
+            text-align: center;
+            padding: 10px;
+            background: rgba(255,255,255,0.02);
+            border-radius: 8px;
+        }
+        .storage-detail-label {
+            font-size: 11px;
+            color: #666;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .storage-detail-value {
+            font-size: 16px;
+            font-weight: 500;
+            color: white;
+            margin-top: 5px;
+        }
+        .storage-list {
+            max-height: 200px;
+            overflow-y: auto;
+            margin-top: 15px;
+        }
+        .storage-list-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px;
+            background: rgba(255,255,255,0.02);
+            border-radius: 8px;
+            margin-bottom: 8px;
+            font-size: 13px;
+        }
+        .storage-list-item:hover {
+            background: rgba(255,255,255,0.05);
+        }
+        .storage-path {
+            color: #aaa;
+            flex: 1;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .storage-size {
+            color: var(--accent);
+            font-weight: 500;
+            margin-left: 10px;
+        }
+
+        /* Checkbox Style */
+        .checkbox-container {
+            display: flex;
+            align-items: center;
+            margin: 15px 0;
+            cursor: pointer;
+        }
+        .checkbox-container input {
+            width: 18px;
+            height: 18px;
+            margin-right: 10px;
+            accent-color: var(--accent);
+        }
+        .checkbox-label {
+            color: #aaa;
+            font-size: 14px;
+        }
     </style>
 </head>
 <body>
@@ -112,6 +232,7 @@
             <div class="nav-item active" onclick="switchTab('backup')">Backup</div>
             <div class="nav-item" onclick="switchTab('restore')">Restore</div>
             <div class="nav-item" onclick="switchTab('rescue')">Rescue USB</div>
+            <div class="nav-item" onclick="switchTab('storage')">Storage</div>
             <div class="info-note">Closing minimizes to tray. Hourly backups continue in background.</div>
             <div class="nav-item" style="position: absolute; bottom: 20px; width: 160px;" onclick="window.close()">Minimize to Tray</div>
         </div>
@@ -122,6 +243,18 @@
             <!-- Backup View -->
             <div id="backup-view" class="view-section active">
                 <h1>Create Backup</h1>
+                
+                <!-- Storage Summary -->
+                <div class="storage-card">
+                    <div class="storage-header">
+                        <span class="storage-title">Total Backup Storage Used</span>
+                        <span class="storage-value" id="total-storage">0 B</span>
+                    </div>
+                    <div class="storage-bar-container">
+                        <div class="storage-bar" id="storage-bar" style="width: 0%"></div>
+                    </div>
+                </div>
+
                 <div class="card">
                     <p style="color:#888; margin-bottom:15px;">Source</p>
                     <button class="btn btn-outline" onclick="selectFolder('backupSource')">Select Folder</button>
@@ -131,6 +264,14 @@
                     <p style="color:#888; margin-bottom:15px;">Destination</p>
                     <button class="btn btn-outline" onclick="selectFolder('backupDest')">Select Drive</button>
                     <span id="backup-dest-text" style="margin-left:15px; color:#aaa;">No destination selected</span>
+                </div>
+
+                <!-- Compression Option -->
+                <div class="card">
+                    <label class="checkbox-container">
+                        <input type="checkbox" id="use-compression" checked>
+                        <span class="checkbox-label">Enable compression (saves space, takes longer)</span>
+                    </label>
                 </div>
                 
                 <div style="text-align:center; margin-top:40px;">
@@ -164,6 +305,15 @@
                     <button class="btn btn-outline" onclick="selectFolder('restoreDest')">Choose Location</button>
                     <span id="restore-dest-text" style="margin-left:15px; color:#aaa;">Original Location</span>
                 </div>
+
+                <!-- Compression Detection -->
+                <div class="card" id="compressed-restore-option" style="display:none;">
+                    <label class="checkbox-container">
+                        <input type="checkbox" id="is-compressed-backup">
+                        <span class="checkbox-label">This is a compressed backup (backup.zip)</span>
+                    </label>
+                </div>
+
                 <div style="text-align:center; margin-top:40px;">
                     <div class="progress-container">
                         <svg class="progress-ring" width="150" height="150">
@@ -210,13 +360,52 @@
                 </div>
             </div>
 
+            <!-- Storage View -->
+            <div id="storage-view" class="view-section">
+                <h1>Storage Usage</h1>
+                
+                <div class="storage-card">
+                    <div class="storage-header">
+                        <span class="storage-title">Total Backup Storage</span>
+                        <span class="storage-value" id="storage-total-main">0 B</span>
+                    </div>
+                    <div class="storage-bar-container">
+                        <div class="storage-bar" id="storage-bar-main" style="width: 0%"></div>
+                    </div>
+                    <div class="storage-details">
+                        <div class="storage-detail-item">
+                            <div class="storage-detail-label">Total Backups</div>
+                            <div class="storage-detail-value" id="backup-count">0</div>
+                        </div>
+                        <div class="storage-detail-item">
+                            <div class="storage-detail-label">Total Files</div>
+                            <div class="storage-detail-value" id="total-files">0</div>
+                        </div>
+                        <div class="storage-detail-item">
+                            <div class="storage-detail-label">Last Backup</div>
+                            <div class="storage-detail-value" id="last-backup">Never</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="storage-header">
+                        <span class="storage-title">Backup Locations</span>
+                        <button class="btn btn-small btn-outline" onclick="refreshStorage()">Refresh</button>
+                    </div>
+                    <div class="storage-list" id="storage-list">
+                        <div class="storage-list-item">
+                            <span class="storage-path" style="color: #666;">No backups found</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
         </div>
     </div>
 
     <script>
         // --- State Management ---
-        // Initialize state with empty strings. 
-        // We will get the home path from the backend if needed, or just let user select.
         let state = {
             backupSource: '',
             backupDest: '',
@@ -225,36 +414,33 @@
             usbDrive: '',
             userProfile: '',
             context: '',
-            activeTab: 'backup' 
+            activeTab: 'backup',
+            storageData: []
         };
 
         // --- UI Logic ---
         function switchTab(tabId) {
-            // Update active tab state
             state.activeTab = tabId;
             
-            // Hide all sections
             document.querySelectorAll('.view-section').forEach(el => el.classList.remove('active'));
-            // Remove active class from nav
             document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
             
-            // Show selected section
             document.getElementById(tabId + '-view').classList.add('active');
-            // Find the nav item that triggered it (via event target) and add active class
             if (typeof event !== 'undefined' && event.target) {
                 event.target.classList.add('active');
             } else {
-                // If no event, find the nav item by tabId and activate it
                 document.querySelector('.nav-item[onclick="switchTab(\'' + tabId + '\')"]').classList.add('active');
+            }
+
+            if (tabId === 'storage') {
+                refreshStorage();
             }
         }
 
         function updateProgress(percent) {
             const circle = document.getElementById('progress-circle');
             const text = document.getElementById('progress-percent');
-            // Use the same value as in the HTML for stroke-dasharray
             const circumference = 440;
-            // Clamp percent between 0 and 100
             const clampedPercent = Math.max(0, Math.min(100, percent));
             const offset = circumference - (clampedPercent / 100) * circumference;
             
@@ -263,14 +449,73 @@
         }
 
         function updateStatus(message) {
-            // Only update the status for the active tab
             const statusElementId = 'status-' + state.activeTab;
             document.getElementById(statusElementId).innerText = message;
         }
 
+        function formatBytes(bytes) {
+            if (bytes === 0) return '0 B';
+            const k = 1024;
+            const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        }
+
+        function updateStorageDisplay(storageData) {
+            if (!storageData || storageData.length === 0) {
+                document.getElementById('total-storage').innerText = '0 B';
+                document.getElementById('storage-total-main').innerText = '0 B';
+                document.getElementById('backup-count').innerText = '0';
+                document.getElementById('total-files').innerText = '0';
+                document.getElementById('last-backup').innerText = 'Never';
+                document.getElementById('storage-list').innerHTML = '<div class="storage-list-item"><span class="storage-path" style="color: #666;">No backups found</span></div>';
+                return;
+            }
+
+            let totalBytes = 0;
+            let totalFiles = 0;
+            let lastBackup = 'Never';
+
+            storageData.forEach(backup => {
+                totalBytes += backup.size_bytes || 0;
+                totalFiles += backup.file_count || 0;
+            });
+
+            if (storageData.length > 0) {
+                const dates = storageData.map(b => new Date(b.last_backup)).filter(d => !isNaN(d));
+                if (dates.length > 0) {
+                    lastBackup = new Date(Math.max(...dates)).toLocaleString();
+                }
+            }
+
+            document.getElementById('total-storage').innerText = formatBytes(totalBytes);
+            document.getElementById('storage-total-main').innerText = formatBytes(totalBytes);
+            document.getElementById('backup-count').innerText = storageData.length;
+            document.getElementById('total-files').innerText = totalFiles.toLocaleString();
+            document.getElementById('last-backup').innerText = lastBackup;
+
+            // Update storage list
+            const listHtml = storageData.map(backup => `
+                <div class="storage-list-item">
+                    <span class="storage-path">${backup.path}</span>
+                    <span class="storage-size">${backup.size_formatted || formatBytes(backup.size_bytes)}</span>
+                </div>
+            `).join('');
+            document.getElementById('storage-list').innerHTML = listHtml;
+
+            // Update storage bar (assume 1TB max for demo)
+            const maxStorage = 1024 * 1024 * 1024 * 1024; // 1TB
+            const percentage = Math.min((totalBytes / maxStorage) * 100, 100);
+            document.getElementById('storage-bar').style.width = percentage + '%';
+            document.getElementById('storage-bar-main').style.width = percentage + '%';
+        }
+
+        function refreshStorage() {
+            window.electronAPI.getStorageAll();
+        }
+
         // --- IPC Communication ---
 
-        // 1. Listen for replies from Backend
         window.electronAPI.onReply((data) => {
             console.log("Received:", data);
             if (data.type === 'progress') {
@@ -279,21 +524,35 @@
                 updateStatus(data.data);
             } else if (data.type === 'complete') {
                 updateStatus(data.data);
-                setTimeout(() => updateProgress(0), 2000);
+                setTimeout(() => {
+                    updateProgress(0);
+                    refreshStorage();
+                }, 2000);
             } else if (data.type === 'error') {
                 alert("Error: " + data.data);
                 updateStatus("Error occurred.");
+            } else if (data.type === 'storage-all') {
+                try {
+                    const storageData = JSON.parse(data.data);
+                    state.storageData = storageData;
+                    updateStorageDisplay(storageData);
+                } catch (e) {
+                    console.error('Error parsing storage data:', e);
+                }
+            } else if (data.type === 'storage-info') {
+                try {
+                    const info = JSON.parse(data.data);
+                    console.log('Storage info:', info);
+                } catch (e) {
+                    console.error('Error parsing storage info:', e);
+                }
             }
         });
 
-        // 2. Listen for folder selection results
         window.electronAPI.onFolderSelected((path) => {
             console.log("Folder Selected:", state.context, path);
-            
-            // Update the state based on which button was clicked
             state[state.context] = path;
 
-            // Map state keys to UI Element IDs
             const idMap = {
                 'backupSource': 'backup-source-text',
                 'backupDest': 'backup-dest-text',
@@ -307,12 +566,16 @@
             if (elementId) {
                 document.getElementById(elementId).innerText = path;
             }
+
+            // Check if restore source has backup.zip
+            if (state.context === 'restoreSource') {
+                // Assume compressed if folder contains backup.zip
+                document.getElementById('compressed-restore-option').style.display = 'block';
+            }
         });
 
-        // 3. Listen for auto-detected user folder
         window.electronAPI.onAutoUserFolder((path) => {
             console.log("Auto-detected user folder:", path);
-            // Auto-select the user profile for rescue USB
             if (path && !state.userProfile) {
                 state.userProfile = path;
                 document.getElementById('profile-text').innerText = path;
@@ -321,9 +584,8 @@
 
         // --- Actions ---
 
-        // Generic folder selector
         function selectFolder(stateKey) {
-            state.context = stateKey; // Remember which one we are selecting
+            state.context = stateKey;
             window.electronAPI.selectFolder();
         }
 
@@ -333,7 +595,13 @@
             }
             updateProgress(0);
             updateStatus("Starting backup...");
-            window.electronAPI.runBackup(state.backupSource, state.backupDest);
+            
+            const useCompression = document.getElementById('use-compression').checked;
+            if (useCompression) {
+                window.electronAPI.runBackupCompressed(state.backupSource, state.backupDest);
+            } else {
+                window.electronAPI.runBackup(state.backupSource, state.backupDest);
+            }
         }
 
         function startHourlyBackup() {
@@ -342,7 +610,13 @@
             }
             updateProgress(0);
             updateStatus("Starting hourly backup...");
-            window.electronAPI.runHourlyBackup(state.backupSource, state.backupDest);
+            
+            const useCompression = document.getElementById('use-compression').checked;
+            if (useCompression) {
+                window.electronAPI.runHourlyBackupCompressed(state.backupSource, state.backupDest);
+            } else {
+                window.electronAPI.runHourlyBackup(state.backupSource, state.backupDest);
+            }
         }
 
         function startRestore() {
@@ -350,16 +624,16 @@
                 return alert("Please select a Backup Source.");
             }
             
-            // If destination not set, assume original (handled by backend logic or fallback)
-            let dest = state.restoreDest; 
-            if (!dest) {
-                // In a real app, you might want to resolve this. 
-                // For now, we pass a flag or empty string and let backend handle logic.
-                dest = "ORIGINAL_LOCATION_FLAG"; 
-            }
+            let dest = state.restoreDest || "ORIGINAL_LOCATION_FLAG";
+            const isCompressed = document.getElementById('is-compressed-backup').checked;
             
             updateStatus("Starting restore...");
-            window.electronAPI.runRestore(state.restoreSource, dest);
+            
+            if (isCompressed) {
+                window.electronAPI.runRestoreCompressed(state.restoreSource, dest);
+            } else {
+                window.electronAPI.runRestore(state.restoreSource, dest);
+            }
         }
 
         function createRescue() {
@@ -384,6 +658,9 @@
             updateStatus("Building Rescue USB with Hourly Backup...");
             window.electronAPI.runRescueWithHourly(state.usbDrive, state.userProfile);
         }
+
+        // Initialize storage display on load
+        setTimeout(() => refreshStorage(), 500);
     </script>
 </body>
 </html>

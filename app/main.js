@@ -6,6 +6,17 @@ const { spawn } = require('child_process');
 let win;
 let tray = null;
 let isQuitting = false;
+let currentProgress = 0;
+let isOperationRunning = false;
+
+function showWindow() {
+    if (!win || win.isDestroyed()) {
+        createWindow();
+    } else {
+        win.show();
+        win.focus();
+    }
+}
 
 function createWindow() {
     win = new BrowserWindow({
@@ -23,7 +34,6 @@ function createWindow() {
 
     win.loadFile('index.html');
 
-    // Send auto-detected user folder path to renderer
     win.webContents.on('did-finish-load', () => {
         const userFolder = autoDetectUserFolder();
         if (userFolder) {
@@ -31,7 +41,6 @@ function createWindow() {
         }
     });
 
-    // Minimize to tray when closing (instead of quitting)
     win.on('close', (event) => {
         if (!isQuitting) {
             event.preventDefault();
@@ -47,7 +56,6 @@ function createWindow() {
 }
 
 function autoDetectUserFolder() {
-    // Try to find the user folder on C: drive
     const possiblePaths = [
         process.env.USERPROFILE,
         process.env.HOME,
@@ -60,7 +68,6 @@ function autoDetectUserFolder() {
         }
     }
 
-    // Fallback: scan C:\Users for user folders
     try {
         const usersPath = path.join('C:', 'Users');
         if (fs.existsSync(usersPath)) {
@@ -81,16 +88,25 @@ function autoDetectUserFolder() {
     return null;
 }
 
+function updateTrayProgress(percent, status) {
+    if (!tray) return;
+    
+    currentProgress = percent;
+    isOperationRunning = percent < 100 && percent > 0;
+    
+    let tooltip = 'Time Machine';
+    if (isOperationRunning) {
+        tooltip = `Time Machine - ${percent}% - ${status || 'Processing...'}`;
+    } else if (percent === 100) {
+        tooltip = 'Time Machine - Complete';
+    }
+    
+    tray.setToolTip(tooltip);
+}
+
 function createTray() {
-    // Create a simple icon for the tray (a small colored square)
-    const icon = nativeImage.createEmpty();
-    const size = 16;
-    const canvas = `
-        <svg width="${size}" height="${size}" xmlns="http://www.w3.org/2000/svg">
-            <rect width="${size}" height="${size}" fill="#3b82f6" rx="2"/>
-        </svg>
-    `;
-    const trayIcon = nativeImage.createFromBuffer(Buffer.from(canvas));
+    const iconDataUrl = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAKklEQVQ4T2NkYGD4z0AEYBwFgwlAAXJNGQVDBRBtANEmjIKhANEmjIKhAB7wABH0ADr1AAAAAElFTkSuQmCC';
+    const trayIcon = nativeImage.createFromDataURL(iconDataUrl);
     
     tray = new Tray(trayIcon);
 
@@ -98,15 +114,14 @@ function createTray() {
         { 
             label: 'Show Time Machine', 
             click: () => {
-                win.show();
-                win.focus();
+                showWindow();
             }
         },
         { type: 'separator' },
         { 
             label: 'Quit', 
             click: async () => {
-                const result = await dialog.showMessageBox(win, {
+                const result = await dialog.showMessageBox({
                     type: 'warning',
                     buttons: ['Yes', 'No'],
                     defaultId: 1,
@@ -123,31 +138,23 @@ function createTray() {
         }
     ]);
 
-    tray.setToolTip('Time Machine - Hourly backups running in background');
+    tray.setToolTip('Time Machine - Ready');
     tray.setContextMenu(contextMenu);
 
-    // Show window when clicking tray icon
     tray.on('click', () => {
-        win.show();
-        win.focus();
+        showWindow();
     });
 }
 
-// Resolve path to C# Engine
 function getEnginePath() {
     if (app.isPackaged) {
-        // In production: looks inside resources/engine/
         return path.join(process.resourcesPath, 'engine', 'TimeMachineEngine.exe');
     }
-    // In development: looks inside engine/bin/Debug/net8.0/
-    // Make sure you have run 'dotnet build' in the engine folder
     return path.join(__dirname, '..', 'engine', 'bin', 'Debug', 'net8.0', 'TimeMachineEngine.exe');
 }
 
-// Helper to parse JSON lines from C# stdout
 function parseEngineOutput(data) {
     try {
-        // C# outputs lines of JSON. Split by newline to be safe.
         const lines = data.toString().split('\n');
         lines.forEach(line => {
             if (line.trim()) {
@@ -155,6 +162,15 @@ function parseEngineOutput(data) {
                     const json = JSON.parse(line);
                     if (win && win.webContents) {
                         win.webContents.send('engine-reply', json);
+                    }
+                    
+                    // Update tray progress
+                    if (json.type === 'progress') {
+                        updateTrayProgress(parseInt(json.data), '');
+                    } else if (json.type === 'status') {
+                        updateTrayProgress(currentProgress, json.data);
+                    } else if (json.type === 'complete') {
+                        updateTrayProgress(100, 'Complete');
                     }
                 } catch (e) {
                     // Ignore lines that aren't valid JSON
@@ -168,7 +184,6 @@ function parseEngineOutput(data) {
 
 // --- IPC Handlers ---
 
-// 1. Open Folder Dialog
 ipcMain.on('select-folder', async (event) => {
     const result = await dialog.showOpenDialog(win, {
         properties: ['openDirectory']
@@ -178,10 +193,8 @@ ipcMain.on('select-folder', async (event) => {
     }
 });
 
-// 2. Run Backup
 ipcMain.on('run-backup', (event, data) => {
     const enginePath = getEnginePath();
-    // Args: backup [source] [dest]
     const proc = spawn(enginePath, ['backup', data.source, data.dest]);
 
     proc.stdout.on('data', parseEngineOutput);
@@ -196,13 +209,24 @@ ipcMain.on('run-backup', (event, data) => {
     });
 });
 
-// 3. Run Restore
+ipcMain.on('run-backup-compressed', (event, data) => {
+    const enginePath = getEnginePath();
+    const proc = spawn(enginePath, ['backup-compressed', data.source, data.dest]);
+
+    proc.stdout.on('data', parseEngineOutput);
+
+    proc.stderr.on('data', (data) => {
+        console.error(`Engine Error: ${data}`);
+        if (win) win.webContents.send('engine-reply', { type: 'error', data: data.toString() });
+    });
+
+    proc.on('close', (code) => {
+        console.log(`Engine process exited with code ${code}`);
+    });
+});
+
 ipcMain.on('run-restore', (event, data) => {
     const enginePath = getEnginePath();
-    
-    // Handle the "Original Location" logic
-    // If the frontend sends "ORIGINAL_LOCATION_FLAG", we might need specific C# logic
-    // For now, we pass the arguments directly.
     let args = ['restore', data.source, data.dest];
     
     const proc = spawn(enginePath, args);
@@ -219,10 +243,24 @@ ipcMain.on('run-restore', (event, data) => {
     });
 });
 
-// 4. Run Hourly Backup
+ipcMain.on('run-restore-compressed', (event, data) => {
+    const enginePath = getEnginePath();
+    const proc = spawn(enginePath, ['restore-compressed', data.source, data.dest]);
+
+    proc.stdout.on('data', parseEngineOutput);
+
+    proc.stderr.on('data', (data) => {
+        console.error(`Engine Error: ${data}`);
+        if (win) win.webContents.send('engine-reply', { type: 'error', data: data.toString() });
+    });
+
+    proc.on('close', (code) => {
+        console.log(`Engine process exited with code ${code}`);
+    });
+});
+
 ipcMain.on('run-hourly-backup', (event, data) => {
     const enginePath = getEnginePath();
-    // Args: hourly [source] [dest]
     const proc = spawn(enginePath, ['hourly', data.source, data.dest]);
 
     proc.stdout.on('data', parseEngineOutput);
@@ -237,10 +275,24 @@ ipcMain.on('run-hourly-backup', (event, data) => {
     });
 });
 
-// 4. Create Rescue USB
+ipcMain.on('run-hourly-backup-compressed', (event, data) => {
+    const enginePath = getEnginePath();
+    const proc = spawn(enginePath, ['hourly-compressed', data.source, data.dest]);
+
+    proc.stdout.on('data', parseEngineOutput);
+
+    proc.stderr.on('data', (data) => {
+        console.error(`Engine Error: ${data}`);
+        if (win) win.webContents.send('engine-reply', { type: 'error', data: data.toString() });
+    });
+
+    proc.on('close', (code) => {
+        console.log(`Engine process exited with code ${code}`);
+    });
+});
+
 ipcMain.on('run-rescue', (event, data) => {
     const enginePath = getEnginePath();
-    // Args: rescue [drive] [userProfile]
     const proc = spawn(enginePath, ['rescue', data.drive, data.profile]);
 
     proc.stdout.on('data', parseEngineOutput);
@@ -255,10 +307,8 @@ ipcMain.on('run-rescue', (event, data) => {
     });
 });
 
-// 5. Create Rescue USB with Hourly Backup
 ipcMain.on('run-rescue-hourly', (event, data) => {
     const enginePath = getEnginePath();
-    // Args: rescue-hourly [drive] [userProfile]
     const proc = spawn(enginePath, ['rescue-hourly', data.drive, data.profile]);
 
     proc.stdout.on('data', parseEngineOutput);
@@ -270,6 +320,30 @@ ipcMain.on('run-rescue-hourly', (event, data) => {
 
     proc.on('close', (code) => {
         console.log(`Engine process exited with code ${code}`);
+    });
+});
+
+ipcMain.on('get-storage-info', (event, data) => {
+    const enginePath = getEnginePath();
+    const proc = spawn(enginePath, ['storage-info', data.path]);
+
+    proc.stdout.on('data', parseEngineOutput);
+
+    proc.stderr.on('data', (data) => {
+        console.error(`Engine Error: ${data}`);
+        if (win) win.webContents.send('engine-reply', { type: 'error', data: data.toString() });
+    });
+});
+
+ipcMain.on('get-storage-all', (event) => {
+    const enginePath = getEnginePath();
+    const proc = spawn(enginePath, ['storage-all']);
+
+    proc.stdout.on('data', parseEngineOutput);
+
+    proc.stderr.on('data', (data) => {
+        console.error(`Engine Error: ${data}`);
+        if (win) win.webContents.send('engine-reply', { type: 'error', data: data.toString() });
     });
 });
 
@@ -285,8 +359,6 @@ app.whenReady().then(() => {
 });
 
 app.on('window-all-closed', () => {
-    // Don't quit on window close - minimize to tray instead
-    // On macOS, keep the app running
     if (process.platform !== 'darwin') {
         // App stays running in tray
     }
