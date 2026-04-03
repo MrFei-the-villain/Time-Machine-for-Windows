@@ -66,6 +66,8 @@
         .btn-danger { background: #dc2626; }
         .btn-success { background: var(--success); }
         .btn-small { padding: 8px 16px; font-size: 12px; }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        .btn:disabled:hover { background: var(--accent); }
         
         /* Progress */
         .progress-container { position: relative; width: 150px; height: 150px; margin: 0 auto; }
@@ -184,6 +186,7 @@
             border-radius: 8px;
             margin-bottom: 8px;
             font-size: 13px;
+            cursor: pointer;
         }
         .storage-list-item:hover {
             background: rgba(255,255,255,0.05);
@@ -218,6 +221,106 @@
             color: #aaa;
             font-size: 14px;
         }
+
+        /* Input Style */
+        .input-field {
+            background: rgba(255,255,255,0.05);
+            border: 1px solid #444;
+            border-radius: 6px;
+            padding: 12px 16px;
+            color: white;
+            font-size: 14px;
+            width: 100%;
+            box-sizing: border-box;
+            margin-bottom: 15px;
+        }
+        .input-field:focus {
+            outline: none;
+            border-color: var(--accent);
+        }
+
+        /* Modal */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.7);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+        .modal {
+            background: var(--bg-dark);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 16px;
+            padding: 30px;
+            width: 400px;
+            max-width: 90%;
+        }
+        .modal-title {
+            font-size: 20px;
+            margin-bottom: 20px;
+        }
+        .modal-buttons {
+            display: flex;
+            justify-content: flex-end;
+            margin-top: 20px;
+            gap: 10px;
+        }
+
+        /* Preview */
+        .preview-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+            gap: 15px;
+            margin-top: 20px;
+        }
+        .preview-item {
+            background: rgba(255,255,255,0.02);
+            border-radius: 8px;
+            padding: 15px;
+            text-align: center;
+            cursor: pointer;
+        }
+        .preview-item:hover {
+            background: rgba(255,255,255,0.05);
+        }
+        .preview-icon {
+            font-size: 32px;
+            margin-bottom: 10px;
+        }
+        .preview-name {
+            font-size: 12px;
+            color: #aaa;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .preview-size {
+            font-size: 10px;
+            color: #666;
+            margin-top: 5px;
+        }
+        .breadcrumb {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 20px;
+            font-size: 14px;
+        }
+        .breadcrumb-item {
+            color: var(--accent);
+            cursor: pointer;
+        }
+        .breadcrumb-item:hover {
+            text-decoration: underline;
+        }
+        .breadcrumb-separator {
+            color: #666;
+        }
     </style>
 </head>
 <body>
@@ -233,8 +336,13 @@
             <div class="nav-item" onclick="switchTab('restore')">Restore</div>
             <div class="nav-item" onclick="switchTab('rescue')">Rescue USB</div>
             <div class="nav-item" onclick="switchTab('storage')">Storage</div>
-            <div class="info-note">Closing minimizes to tray. Hourly backups continue in background.</div>
-            <div class="nav-item" style="position: absolute; bottom: 20px; width: 160px;" onclick="window.close()">Minimize to Tray</div>
+            <div class="nav-item" onclick="switchTab('preview')">Preview</div>
+            <div class="nav-item" onclick="switchTab('settings')">Settings</div>
+            <div class="info-note" style="margin-bottom: 100px;">Closing minimizes to tray. Hourly backups continue in background.</div>
+            <div style="position: absolute; bottom: 20px; width: 160px;">
+                <div class="nav-item" style="margin-bottom: 8px;" onclick="minimizeToTray()">Minimize to Tray</div>
+                <div class="nav-item" style="background: var(--danger);" onclick="quitApp()">Quit</div>
+            </div>
         </div>
 
         <!-- Main Content -->
@@ -266,12 +374,19 @@
                     <span id="backup-dest-text" style="margin-left:15px; color:#aaa;">No destination selected</span>
                 </div>
 
-                <!-- Compression Option -->
+                <!-- Options -->
                 <div class="card">
                     <label class="checkbox-container">
                         <input type="checkbox" id="use-compression" checked>
                         <span class="checkbox-label">Enable compression (saves space, takes longer)</span>
                     </label>
+                    <label class="checkbox-container">
+                        <input type="checkbox" id="use-encryption">
+                        <span class="checkbox-label">Enable encryption (password protected)</span>
+                    </label>
+                    <div id="password-input-container" style="display:none; margin-top:15px;">
+                        <input type="password" id="backup-password" class="input-field" placeholder="Enter encryption password">
+                    </div>
                 </div>
                 
                 <div style="text-align:center; margin-top:40px;">
@@ -284,8 +399,8 @@
                     </div>
                     <div id="status-backup" class="status-msg">Ready</div>
                     <div style="margin-top:20px;">
-                        <button class="btn" style="width:200px; margin-right:10px;" onclick="startBackup()">Start Backup</button>
-                        <button class="btn btn-outline" style="width:200px;" onclick="startHourlyBackup()">Hourly Backup</button>
+                        <button class="btn" id="btn-start-backup" style="width:200px; margin-right:10px;" onclick="startBackup()">Start Backup</button>
+                        <button class="btn btn-outline" id="btn-hourly-backup" style="width:200px;" onclick="startHourlyBackup()">Hourly Backup</button>
                     </div>
                 </div>
             </div>
@@ -306,12 +421,19 @@
                     <span id="restore-dest-text" style="margin-left:15px; color:#aaa;">Original Location</span>
                 </div>
 
-                <!-- Compression Detection -->
-                <div class="card" id="compressed-restore-option" style="display:none;">
+                <!-- Restore Options -->
+                <div class="card" id="restore-options" style="display:none;">
                     <label class="checkbox-container">
                         <input type="checkbox" id="is-compressed-backup">
                         <span class="checkbox-label">This is a compressed backup (backup.zip)</span>
                     </label>
+                    <label class="checkbox-container">
+                        <input type="checkbox" id="is-encrypted-backup">
+                        <span class="checkbox-label">This is an encrypted backup (backup.enc)</span>
+                    </label>
+                    <div id="restore-password-container" style="display:none; margin-top:15px;">
+                        <input type="password" id="restore-password" class="input-field" placeholder="Enter decryption password">
+                    </div>
                 </div>
 
                 <div style="text-align:center; margin-top:40px;">
@@ -323,7 +445,7 @@
                         <div id="progress-percent" class="progress-text">0%</div>
                     </div>
                     <div id="status-restore" class="status-msg"></div>
-                    <button class="btn" style="margin-top:20px; width:200px;" onclick="startRestore()">Restore</button>
+                    <button class="btn" id="btn-restore" style="margin-top:20px; width:200px;" onclick="startRestore()">Restore</button>
                 </div>
             </div>
 
@@ -354,8 +476,8 @@
                     </div>
                     <div id="status-rescue" class="status-msg"></div>
                     <div style="margin-top:20px;">
-                        <button class="btn btn-danger" style="width:200px; margin-right:10px;" onclick="createRescue()">Build Rescue USB</button>
-                        <button class="btn" style="width:250px;" onclick="createRescueWithHourly()">Build Rescue USB with Hourly Backup</button>
+                        <button class="btn btn-danger" id="btn-rescue" style="width:200px; margin-right:10px;" onclick="createRescue()">Build Rescue USB</button>
+                        <button class="btn" id="btn-rescue-hourly" style="width:250px;" onclick="createRescueWithHourly()">Build Rescue USB with Hourly Backup</button>
                     </div>
                 </div>
             </div>
@@ -401,6 +523,71 @@
                 </div>
             </div>
 
+            <!-- Preview View -->
+            <div id="preview-view" class="view-section">
+                <h1>Backup Preview</h1>
+                
+                <div class="card">
+                    <p style="color:#888; margin-bottom:15px;">Select Backup to Preview</p>
+                    <button class="btn btn-outline" onclick="selectFolder('previewPath')">Select Backup Folder</button>
+                    <span id="preview-path-text" style="margin-left:15px; color:#aaa;">No backup selected</span>
+                </div>
+
+                <div id="preview-content" style="display:none;">
+                    <div class="breadcrumb" id="preview-breadcrumb"></div>
+                    <div class="preview-grid" id="preview-grid"></div>
+                </div>
+            </div>
+
+            <!-- Settings View -->
+            <div id="settings-view" class="view-section">
+                <h1>Settings</h1>
+
+                <div class="card">
+                    <h3 style="margin:0 0 15px 0; font-weight:400;">App Protection</h3>
+                    <p style="color:#888; font-size:13px; margin-bottom:15px;">
+                        Set a password to prevent unauthorized closing of the app. This ensures hourly backups continue running.
+                    </p>
+                    <div id="password-status" style="margin-bottom:15px; padding:10px; background:rgba(255,255,255,0.02); border-radius:8px;">
+                        <span style="color:#888;">Status: </span>
+                        <span id="password-status-text" style="color:var(--warning);">Not Set</span>
+                    </div>
+                    <button class="btn btn-success" id="set-password-btn" onclick="setAppPassword()">Set Password</button>
+                    <button class="btn btn-outline" id="change-password-btn" style="display:none;" onclick="setAppPassword()">Change Password</button>
+                    <button class="btn btn-outline" id="remove-password-btn" style="display:none;" onclick="removeAppPassword()">Remove Password</button>
+                </div>
+
+                <div class="card">
+                    <h3 style="margin:0 0 15px 0; font-weight:400;">Saved Settings</h3>
+                    <p style="color:#888; font-size:13px; margin-bottom:15px;">
+                        Your preferences are automatically saved when minimizing to tray and restored when reopening the app.
+                    </p>
+                    <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 10px; font-size: 13px;">
+                        <div style="color:#888;">Backup Source:</div>
+                        <div id="settings-backup-source" style="color:#aaa;">Not set</div>
+                        <div style="color:#888;">Backup Destination:</div>
+                        <div id="settings-backup-dest" style="color:#aaa;">Not set</div>
+                        <div style="color:#888;">Compression:</div>
+                        <div id="settings-compression" style="color:#aaa;">Enabled</div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <h3 style="margin:0 0 15px 0; font-weight:400;">About</h3>
+                    <p style="color:#888; font-size:13px;">
+                        Time Machine for Windows v1.0.2<br>
+                        A backup and restore utility with encryption support.<br><br>
+                        <strong>Features:</strong><br>
+                        • Backup with compression and encryption<br>
+                        • Hourly automatic backups<br>
+                        • Rescue USB creation<br>
+                        • Storage tracking<br>
+                        • Password protection<br>
+                        • Settings persistence
+                    </p>
+                </div>
+            </div>
+
         </div>
     </div>
 
@@ -413,10 +600,79 @@
             restoreDest: '',
             usbDrive: '',
             userProfile: '',
+            previewPath: '',
             context: '',
             activeTab: 'backup',
-            storageData: []
+            storageData: [],
+            appPasswordSet: false,
+            currentPreviewPath: '',
+            useCompression: true,
+            useEncryption: false,
+            isOperationRunning: false
         };
+
+        // --- Settings Management ---
+        function getSettingsToSave() {
+            return {
+                backupSource: state.backupSource,
+                backupDest: state.backupDest,
+                restoreSource: state.restoreSource,
+                restoreDest: state.restoreDest,
+                usbDrive: state.usbDrive,
+                userProfile: state.userProfile,
+                useCompression: document.getElementById('use-compression').checked,
+                useEncryption: document.getElementById('use-encryption').checked,
+                lastTab: state.activeTab
+            };
+        }
+
+        function applySettings(settings) {
+            if (settings.backupSource) {
+                state.backupSource = settings.backupSource;
+                document.getElementById('backup-source-text').innerText = settings.backupSource;
+                document.getElementById('settings-backup-source').innerText = settings.backupSource;
+            }
+            if (settings.backupDest) {
+                state.backupDest = settings.backupDest;
+                document.getElementById('backup-dest-text').innerText = settings.backupDest;
+                document.getElementById('settings-backup-dest').innerText = settings.backupDest;
+            }
+            if (settings.restoreSource) {
+                state.restoreSource = settings.restoreSource;
+                document.getElementById('restore-source-text').innerText = settings.restoreSource;
+            }
+            if (settings.restoreDest) {
+                state.restoreDest = settings.restoreDest;
+                document.getElementById('restore-dest-text').innerText = settings.restoreDest;
+            }
+            if (settings.usbDrive) {
+                state.usbDrive = settings.usbDrive;
+                document.getElementById('usb-text').innerText = settings.usbDrive;
+            }
+            if (settings.userProfile) {
+                state.userProfile = settings.userProfile;
+                document.getElementById('profile-text').innerText = settings.userProfile;
+            }
+            if (settings.useCompression !== undefined) {
+                document.getElementById('use-compression').checked = settings.useCompression;
+                state.useCompression = settings.useCompression;
+                document.getElementById('settings-compression').innerText = settings.useCompression ? 'Enabled' : 'Disabled';
+            }
+            if (settings.useEncryption !== undefined) {
+                document.getElementById('use-encryption').checked = settings.useEncryption;
+                state.useEncryption = settings.useEncryption;
+                document.getElementById('password-input-container').style.display = settings.useEncryption ? 'block' : 'none';
+            }
+            if (settings.lastTab) {
+                switchTab(settings.lastTab);
+            }
+        }
+
+        function saveAndMinimize() {
+            const settings = getSettingsToSave();
+            window.electronAPI.saveSettings(settings);
+            window.electronAPI.minimizeNow();
+        }
 
         // --- UI Logic ---
         function switchTab(tabId) {
@@ -494,17 +750,15 @@
             document.getElementById('total-files').innerText = totalFiles.toLocaleString();
             document.getElementById('last-backup').innerText = lastBackup;
 
-            // Update storage list
             const listHtml = storageData.map(backup => `
-                <div class="storage-list-item">
+                <div class="storage-list-item" onclick="previewBackup('${backup.path}')">
                     <span class="storage-path">${backup.path}</span>
                     <span class="storage-size">${backup.size_formatted || formatBytes(backup.size_bytes)}</span>
                 </div>
             `).join('');
             document.getElementById('storage-list').innerHTML = listHtml;
 
-            // Update storage bar (assume 1TB max for demo)
-            const maxStorage = 1024 * 1024 * 1024 * 1024; // 1TB
+            const maxStorage = 1024 * 1024 * 1024 * 1024;
             const percentage = Math.min((totalBytes / maxStorage) * 100, 100);
             document.getElementById('storage-bar').style.width = percentage + '%';
             document.getElementById('storage-bar-main').style.width = percentage + '%';
@@ -524,6 +778,7 @@
                 updateStatus(data.data);
             } else if (data.type === 'complete') {
                 updateStatus(data.data);
+                enableAllOperationButtons();
                 setTimeout(() => {
                     updateProgress(0);
                     refreshStorage();
@@ -531,6 +786,7 @@
             } else if (data.type === 'error') {
                 alert("Error: " + data.data);
                 updateStatus("Error occurred.");
+                enableAllOperationButtons();
             } else if (data.type === 'storage-all') {
                 try {
                     const storageData = JSON.parse(data.data);
@@ -539,12 +795,27 @@
                 } catch (e) {
                     console.error('Error parsing storage data:', e);
                 }
-            } else if (data.type === 'storage-info') {
+            } else if (data.type === 'password-set') {
+                state.appPasswordSet = true;
+                document.getElementById('password-status-text').innerText = 'Enabled';
+                document.getElementById('password-status-text').style.color = 'var(--success)';
+                document.getElementById('set-password-btn').innerText = 'Change Password';
+                document.getElementById('remove-password-btn').style.display = 'inline-block';
+            } else if (data.type === 'password-result') {
+            } else if (data.type === 'password-removed') {
+                if (data.data === 'true') {
+                    state.appPasswordSet = false;
+                    document.getElementById('password-status-text').innerText = 'Not Set';
+                    document.getElementById('password-status-text').style.color = 'var(--warning)';
+                    document.getElementById('set-password-btn').innerText = 'Set Password';
+                    document.getElementById('remove-password-btn').style.display = 'none';
+                }
+            } else if (data.type === 'preview-result') {
                 try {
-                    const info = JSON.parse(data.data);
-                    console.log('Storage info:', info);
+                    const previewData = JSON.parse(data.data);
+                    displayPreview(previewData);
                 } catch (e) {
-                    console.error('Error parsing storage info:', e);
+                    console.error('Error parsing preview data:', e);
                 }
             }
         });
@@ -559,7 +830,8 @@
                 'restoreSource': 'restore-source-text',
                 'restoreDest': 'restore-dest-text',
                 'usbDrive': 'usb-text',
-                'userProfile': 'profile-text'
+                'userProfile': 'profile-text',
+                'previewPath': 'preview-path-text'
             };
 
             const elementId = idMap[state.context];
@@ -567,10 +839,14 @@
                 document.getElementById(elementId).innerText = path;
             }
 
-            // Check if restore source has backup.zip
             if (state.context === 'restoreSource') {
-                // Assume compressed if folder contains backup.zip
-                document.getElementById('compressed-restore-option').style.display = 'block';
+                document.getElementById('restore-options').style.display = 'block';
+            }
+            
+            if (state.context === 'previewPath') {
+                state.currentPreviewPath = path;
+                window.electronAPI.previewFiles(path);
+                document.getElementById('preview-content').style.display = 'block';
             }
         });
 
@@ -582,6 +858,32 @@
             }
         });
 
+        window.electronAPI.onAppPasswordStatus((status) => {
+            state.appPasswordSet = status;
+            if (status) {
+                document.getElementById('password-status-text').innerText = 'Enabled';
+                document.getElementById('password-status-text').style.color = 'var(--success)';
+                document.getElementById('set-password-btn').style.display = 'none';
+                document.getElementById('change-password-btn').style.display = 'inline-block';
+                document.getElementById('remove-password-btn').style.display = 'inline-block';
+            } else {
+                document.getElementById('password-status-text').innerText = 'Not Set';
+                document.getElementById('password-status-text').style.color = 'var(--warning)';
+                document.getElementById('set-password-btn').style.display = 'inline-block';
+                document.getElementById('change-password-btn').style.display = 'none';
+                document.getElementById('remove-password-btn').style.display = 'none';
+            }
+        });
+
+        window.electronAPI.onLoadSettings((settings) => {
+            console.log("Loading saved settings:", settings);
+            applySettings(settings);
+        });
+
+        window.electronAPI.onSaveAndMinimize(() => {
+            saveAndMinimize();
+        });
+
         // --- Actions ---
 
         function selectFolder(stateKey) {
@@ -589,15 +891,46 @@
             window.electronAPI.selectFolder();
         }
 
+        function disableAllOperationButtons() {
+            state.isOperationRunning = true;
+            window.electronAPI.setOperationRunning(true);
+            document.getElementById('btn-start-backup').disabled = true;
+            document.getElementById('btn-hourly-backup').disabled = true;
+            document.getElementById('btn-restore').disabled = true;
+            document.getElementById('btn-rescue').disabled = true;
+            document.getElementById('btn-rescue-hourly').disabled = true;
+        }
+
+        function enableAllOperationButtons() {
+            state.isOperationRunning = false;
+            window.electronAPI.setOperationRunning(false);
+            document.getElementById('btn-start-backup').disabled = false;
+            document.getElementById('btn-hourly-backup').disabled = false;
+            document.getElementById('btn-restore').disabled = false;
+            document.getElementById('btn-rescue').disabled = false;
+            document.getElementById('btn-rescue-hourly').disabled = false;
+        }
+
         function startBackup() {
             if(!state.backupSource || !state.backupDest) {
                 return alert("Please select both Source and Destination.");
             }
+            
+            const useCompression = document.getElementById('use-compression').checked;
+            const useEncryption = document.getElementById('use-encryption').checked;
+            const password = document.getElementById('backup-password').value;
+            
+            if (useEncryption && !password) {
+                return alert("Please enter an encryption password.");
+            }
+
+            disableAllOperationButtons();
             updateProgress(0);
             updateStatus("Starting backup...");
             
-            const useCompression = document.getElementById('use-compression').checked;
-            if (useCompression) {
+            if (useEncryption) {
+                window.electronAPI.runBackupEncrypted(state.backupSource, state.backupDest, password);
+            } else if (useCompression) {
                 window.electronAPI.runBackupCompressed(state.backupSource, state.backupDest);
             } else {
                 window.electronAPI.runBackup(state.backupSource, state.backupDest);
@@ -608,6 +941,7 @@
             if(!state.backupSource || !state.backupDest) {
                 return alert("Please select both Source and Destination.");
             }
+            disableAllOperationButtons();
             updateProgress(0);
             updateStatus("Starting hourly backup...");
             
@@ -626,10 +960,19 @@
             
             let dest = state.restoreDest || "ORIGINAL_LOCATION_FLAG";
             const isCompressed = document.getElementById('is-compressed-backup').checked;
+            const isEncrypted = document.getElementById('is-encrypted-backup').checked;
+            const password = document.getElementById('restore-password').value;
             
+            if (isEncrypted && !password) {
+                return alert("Please enter the decryption password.");
+            }
+
+            disableAllOperationButtons();
             updateStatus("Starting restore...");
             
-            if (isCompressed) {
+            if (isEncrypted) {
+                window.electronAPI.runRestoreEncrypted(state.restoreSource, dest, password);
+            } else if (isCompressed) {
                 window.electronAPI.runRestoreCompressed(state.restoreSource, dest);
             } else {
                 window.electronAPI.runRestore(state.restoreSource, dest);
@@ -643,6 +986,7 @@
             if(!state.userProfile) {
                 return alert("Please select the User Profile folder.");
             }
+            disableAllOperationButtons();
             updateStatus("Building Rescue USB...");
             window.electronAPI.runRescue(state.usbDrive, state.userProfile);
         }
@@ -654,10 +998,98 @@
             if(!state.userProfile) {
                 return alert("Please select the User Profile folder.");
             }
+            disableAllOperationButtons();
             updateProgress(0);
             updateStatus("Building Rescue USB with Hourly Backup...");
             window.electronAPI.runRescueWithHourly(state.usbDrive, state.userProfile);
         }
+
+        function setAppPassword() {
+            window.electronAPI.openPasswordEntry('setup');
+        }
+
+        function removeAppPassword() {
+            window.electronAPI.openPasswordEntry('remove');
+        }
+
+        function minimizeToTray() {
+            saveAndMinimize();
+        }
+
+        function quitApp() {
+            if (state.isOperationRunning) {
+                alert("Cannot quit while an operation is running.");
+                return;
+            }
+            window.electronAPI.openPasswordEntry('quit');
+        }
+
+        function previewBackup(path) {
+            state.previewPath = path;
+            state.currentPreviewPath = path;
+            document.getElementById('preview-path-text').innerText = path;
+            switchTab('preview');
+            window.electronAPI.previewFiles(path);
+            document.getElementById('preview-content').style.display = 'block';
+        }
+
+        function displayPreview(data) {
+            const breadcrumb = document.getElementById('preview-breadcrumb');
+            const grid = document.getElementById('preview-grid');
+
+            const safePath = encodeURIComponent(data.path);
+            breadcrumb.innerHTML = `<span class="breadcrumb-item" onclick="navigatePreview('${safePath}')">${escapeHtml(data.path)}</span>`;
+
+            let html = '';
+
+            if (data.directories && data.directories.length > 0) {
+                data.directories.forEach(dir => {
+                    const fullPath = data.path + '/' + dir;
+                    const encodedPath = encodeURIComponent(fullPath);
+                    html += `
+                        <div class="preview-item" onclick="navigatePreview('${encodedPath}')">
+                            <div class="preview-icon">📁</div>
+                            <div class="preview-name">${escapeHtml(dir)}</div>
+                        </div>
+                    `;
+                });
+            }
+
+            if (data.files && data.files.length > 0) {
+                data.files.forEach(file => {
+                    html += `
+                        <div class="preview-item">
+                            <div class="preview-icon">📄</div>
+                            <div class="preview-name">${escapeHtml(file.name)}</div>
+                            <div class="preview-size">${escapeHtml(file.size_formatted)}</div>
+                        </div>
+                    `;
+                });
+            }
+
+            grid.innerHTML = html || '<p style="color:#666;">No files found</p>';
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function navigatePreview(path) {
+            const decodedPath = decodeURIComponent(path);
+            state.currentPreviewPath = decodedPath;
+            window.electronAPI.previewFiles(decodedPath);
+        }
+
+        // --- Event Listeners ---
+        document.getElementById('use-encryption').addEventListener('change', function() {
+            document.getElementById('password-input-container').style.display = this.checked ? 'block' : 'none';
+        });
+
+        document.getElementById('is-encrypted-backup').addEventListener('change', function() {
+            document.getElementById('restore-password-container').style.display = this.checked ? 'block' : 'none';
+        });
 
         // Initialize storage display on load
         setTimeout(() => refreshStorage(), 500);

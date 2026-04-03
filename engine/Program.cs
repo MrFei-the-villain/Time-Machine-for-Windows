@@ -6,11 +6,15 @@ using System.Text.Json;
 using System.Threading;
 using Microsoft.Win32;
 using System.Collections.Generic;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace TimeMachineEngine
 {
     class Program
     {
+        private static string _password = "";
+        
         static void Main(string[] args)
         {
             if (args.Length == 0) return;
@@ -29,11 +33,19 @@ namespace TimeMachineEngine
                     case "backup-compressed":
                         RunCompressedBackup(args[1], args[2]);
                         break;
+                    case "backup-encrypted":
+                        if (args.Length >= 4) RunEncryptedBackup(args[1], args[2], args[3]);
+                        else SendJson("error", "Password required for encrypted backup");
+                        break;
                     case "restore":
                         RunRestore(args[1], args[2]);
                         break;
                     case "restore-compressed":
                         RunCompressedRestore(args[1], args[2]);
+                        break;
+                    case "restore-encrypted":
+                        if (args.Length >= 4) RunEncryptedRestore(args[1], args[2], args[3]);
+                        else SendJson("error", "Password required for encrypted restore");
                         break;
                     case "rescue":
                         CreateRescueUSB(args[1], args[2]);
@@ -53,7 +65,328 @@ namespace TimeMachineEngine
                     case "storage-all":
                         GetAllStorageInfo();
                         break;
+                    case "verify-password":
+                        if (args.Length >= 3) VerifyPassword(args[1], args[2]);
+                        else SendJson("verify-result", "false");
+                        break;
+                    case "set-app-password":
+                        if (args.Length >= 2) SetAppPassword(args[1]);
+                        else SendJson("error", "Password required");
+                        break;
+                    case "check-app-password":
+                        if (args.Length >= 2) CheckAppPassword(args[1]);
+                        else SendJson("password-result", "false");
+                        break;
+                    case "preview-files":
+                        if (args.Length >= 2) PreviewFiles(args[1]);
+                        else SendJson("error", "Path required");
+                        break;
                 }
+            }
+            catch (Exception ex)
+            {
+                SendJson("error", ex.Message);
+            }
+        }
+
+        static void RunEncryptedBackup(string source, string dest, string password)
+        {
+            SendJson("status", "Preparing encrypted backup...");
+            
+            Directory.CreateDirectory(dest);
+            string zipPath = Path.Combine(dest, "backup.zip");
+            string encPath = Path.Combine(dest, "backup.enc");
+            
+            List<string> allFiles = new List<string>();
+            GetFilesRecursively(source, allFiles);
+            
+            if (allFiles.Count == 0) {
+                SendJson("error", "No files could be accessed for backup.");
+                return;
+            }
+
+            long totalBytes = 0;
+            foreach (string file in allFiles)
+            {
+                try { totalBytes += new FileInfo(file).Length; } catch { }
+            }
+
+            SendJson("status", "Compressing files...");
+            
+            using (var archive = ZipFile.Open(zipPath, ZipArchiveMode.Create))
+            {
+                long processedBytes = 0;
+                foreach (string file in allFiles)
+                {
+                    try
+                    {
+                        string entryName = file.Substring(source.Length).TrimStart(Path.DirectorySeparatorChar);
+                        archive.CreateEntryFromFile(file, entryName);
+                        processedBytes += new FileInfo(file).Length;
+                        
+                        if (processedBytes % (10 * 1024 * 1024) < 50000)
+                        {
+                            int percent = (int)((processedBytes / (double)totalBytes) * 100);
+                            SendJson("progress", percent.ToString());
+                        }
+                    }
+                    catch { }
+                }
+            }
+
+            SendJson("status", "Encrypting backup...");
+            EncryptFile(zipPath, encPath, password);
+            File.Delete(zipPath);
+            
+            File.WriteAllText(Path.Combine(dest, "encrypted.flag"), "true");
+
+            ExportSystemState(dest);
+            UpdateStorageInfo(dest, source);
+            SendJson("complete", "Encrypted backup finished successfully.");
+        }
+
+        static void RunEncryptedRestore(string source, string dest, string password)
+        {
+            string encPath = Path.Combine(source, "backup.enc");
+            string zipPath = Path.Combine(source, "backup.zip");
+            
+            if (!File.Exists(encPath)) {
+                SendJson("error", "No encrypted backup found.");
+                return;
+            }
+            
+            SendJson("status", "Decrypting backup...");
+            
+            try
+            {
+                DecryptFile(encPath, zipPath, password);
+            }
+            catch (Exception ex)
+            {
+                SendJson("error", "Decryption failed. Wrong password or corrupted file.");
+                return;
+            }
+            
+            SendJson("status", "Extracting backup...");
+            
+            using (var archive = ZipFile.OpenRead(zipPath))
+            {
+                int total = archive.Entries.Count;
+                int processed = 0;
+                
+                foreach (var entry in archive.Entries)
+                {
+                    try
+                    {
+                        string destPath = Path.Combine(dest, entry.FullName);
+                        Directory.CreateDirectory(Path.GetDirectoryName(destPath));
+                        entry.ExtractToFile(destPath, true);
+                        processed++;
+                        
+                        if (processed % 100 == 0)
+                        {
+                            int percent = (int)((processed / (double)total) * 100);
+                            SendJson("progress", percent.ToString());
+                        }
+                    }
+                    catch { }
+                }
+            }
+            
+            File.Delete(zipPath);
+            SendJson("complete", "Encrypted restore finished successfully.");
+        }
+
+        static void EncryptFile(string inputFile, string outputFile, string password)
+        {
+            byte[] salt = new byte[16];
+            using (var rng = RandomNumberGenerator.Create())
+            {
+                rng.GetBytes(salt);
+            }
+
+            using (var aes = Aes.Create())
+            {
+                var key = new Rfc2898DeriveBytes(password, salt, 100000, HashAlgorithmName.SHA256);
+                aes.Key = key.GetBytes(32);
+                aes.IV = key.GetBytes(16);
+
+                using (var outputStream = new FileStream(outputFile, FileMode.Create))
+                {
+                    outputStream.Write(salt, 0, salt.Length);
+                    
+                    using (var cryptoStream = new CryptoStream(outputStream, aes.CreateEncryptor(), CryptoStreamMode.Write))
+                    using (var inputStream = new FileStream(inputFile, FileMode.Open))
+                    {
+                        inputStream.CopyTo(cryptoStream);
+                    }
+                }
+            }
+        }
+
+        static void DecryptFile(string inputFile, string outputFile, string password)
+        {
+            byte[] salt = new byte[16];
+            
+            using (var inputStream = new FileStream(inputFile, FileMode.Open))
+            {
+                inputStream.Read(salt, 0, salt.Length);
+
+                using (var aes = Aes.Create())
+                {
+                    var key = new Rfc2898DeriveBytes(password, salt, 100000, HashAlgorithmName.SHA256);
+                    aes.Key = key.GetBytes(32);
+                    aes.IV = key.GetBytes(16);
+
+                    using (var cryptoStream = new CryptoStream(inputStream, aes.CreateDecryptor(), CryptoStreamMode.Read))
+                    using (var outputStream = new FileStream(outputFile, FileMode.Create))
+                    {
+                        cryptoStream.CopyTo(outputStream);
+                    }
+                }
+            }
+        }
+
+        static void SetAppPassword(string password)
+        {
+            try
+            {
+                string appDataPath = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+                string timeMachinePath = Path.Combine(appDataPath, "TimeMachine");
+                Directory.CreateDirectory(timeMachinePath);
+                
+                string passwordFile = Path.Combine(timeMachinePath, "app_password.json");
+                
+                using (var sha256 = SHA256.Create())
+                {
+                    byte[] hash = sha256.ComputeHash(Encoding.UTF8.GetBytes(password + "TimeMachineSalt2024"));
+                    var passwordData = new Dictionary<string, object>
+                    {
+                        { "hash", Convert.ToBase64String(hash) },
+                        { "created", DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") }
+                    };
+                    
+                    File.WriteAllText(passwordFile, JsonSerializer.Serialize(passwordData));
+                }
+                
+                SendJson("password-set", "true");
+            }
+            catch (Exception ex)
+            {
+                SendJson("error", ex.Message);
+            }
+        }
+
+        static void CheckAppPassword(string password)
+        {
+            try
+            {
+                string appDataPath = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+                string passwordFile = Path.Combine(appDataPath, "TimeMachine", "app_password.json");
+                
+                if (!File.Exists(passwordFile))
+                {
+                    SendJson("password-result", "not-set");
+                    return;
+                }
+                
+                string json = File.ReadAllText(passwordFile);
+                var data = JsonSerializer.Deserialize<Dictionary<string, object>>(json);
+                
+                using (var sha256 = SHA256.Create())
+                {
+                    byte[] hash = sha256.ComputeHash(Encoding.UTF8.GetBytes(password + "TimeMachineSalt2024"));
+                    string inputHash = Convert.ToBase64String(hash);
+                    
+                    if (data.ContainsKey("hash") && data["hash"].ToString() == inputHash)
+                    {
+                        SendJson("password-result", "true");
+                    }
+                    else
+                    {
+                        SendJson("password-result", "false");
+                    }
+                }
+            }
+            catch
+            {
+                SendJson("password-result", "false");
+            }
+        }
+
+        static void VerifyPassword(string backupPath, string password)
+        {
+            try
+            {
+                string encPath = Path.Combine(backupPath, "backup.enc");
+                string testPath = Path.Combine(backupPath, "test.zip");
+                
+                if (!File.Exists(encPath))
+                {
+                    SendJson("verify-result", "not-encrypted");
+                    return;
+                }
+                
+                try
+                {
+                    DecryptFile(encPath, testPath, password);
+                    File.Delete(testPath);
+                    SendJson("verify-result", "true");
+                }
+                catch
+                {
+                    SendJson("verify-result", "false");
+                }
+            }
+            catch
+            {
+                SendJson("verify-result", "false");
+            }
+        }
+
+        static void PreviewFiles(string path)
+        {
+            try
+            {
+                var files = new List<Dictionary<string, object>>();
+                var dirs = new List<string>();
+                
+                if (Directory.Exists(path))
+                {
+                    string[] subDirs = Directory.GetDirectories(path);
+                    foreach (string dir in subDirs)
+                    {
+                        try
+                        {
+                            dirs.Add(Path.GetFileName(dir));
+                        } catch { }
+                    }
+                    
+                    string[] filesInDir = Directory.GetFiles(path);
+                    foreach (string file in filesInDir)
+                    {
+                        try
+                        {
+                            var fileInfo = new FileInfo(file);
+                            files.Add(new Dictionary<string, object>
+                            {
+                                { "name", fileInfo.Name },
+                                { "size", fileInfo.Length },
+                                { "size_formatted", FormatBytes(fileInfo.Length) },
+                                { "modified", fileInfo.LastWriteTime.ToString("yyyy-MM-dd HH:mm") }
+                            });
+                        } catch { }
+                    }
+                }
+                
+                var result = new Dictionary<string, object>
+                {
+                    { "path", path },
+                    { "directories", dirs },
+                    { "files", files }
+                };
+                
+                SendJson("preview-result", JsonSerializer.Serialize(result));
             }
             catch (Exception ex)
             {
