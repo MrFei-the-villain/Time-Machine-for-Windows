@@ -1,4 +1,5 @@
-This it the current newest code.
+This is the current newest code.
+For all files for developement, please go to main.
 # Time Machine for Windows
 
 A powerful backup and restore utility for Windows, inspired by macOS Time Machine. Features encryption, compression, hourly backups, and rescue USB creation.
