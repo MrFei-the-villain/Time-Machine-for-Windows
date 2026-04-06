@@ -214,4 +214,4 @@ MIT License - See [LICENSE](LICENSE) for details.
 
 ---
 
-Made with ❤️ by [MrFei-the-villain](https://github.com/MrFei-the-villain)
+Made with utter and concentrated malice by [MrFei-the-villain](https://github.com/MrFei-the-villain)
